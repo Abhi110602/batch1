@@ -1,0 +1,102 @@
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    classification_report,
+    confusion_matrix,
+)
+from sklearn.decomposition import PCA
+from sklearn.ensemble import ExtraTreesClassifier
+from lazypredict.Supervised import LazyClassifier
+import warnings
+
+warnings.filterwarnings("ignore")
+
+# Load and preprocess the dataset
+df = pd.read_csv("https://raw.githubusercontent.com/1205sreekar/CSD/main/data.csv")
+df.drop(columns=["ID"], inplace=True)
+df["class"] = [1 if i == "P" else 0 for i in df["class"]]
+
+# Drop low-variance features
+variances = df.var()
+threshold = 0.2
+low_variance = variances[variances <= threshold].index
+filtered_data = df.drop(columns=low_variance)
+
+X = filtered_data.drop(columns="class")
+y = filtered_data["class"]
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.21, shuffle=True, random_state=3
+)
+
+# Scale features
+scaler1 = MinMaxScaler()
+scaler2 = MinMaxScaler()
+
+scaler1.fit(X_train)
+scaler2.fit(X_test)
+
+X_train = pd.DataFrame(scaler1.transform(X_train), index=X_train.index, columns=X_train.columns)
+X_test = pd.DataFrame(scaler2.transform(X_test), index=X_test.index, columns=X_test.columns)
+
+# Dimensionality reduction using PCA
+pca = PCA(n_components=0.95)
+X_train_pca = pca.fit_transform(X_train)
+X_test_pca = pca.transform(X_test)
+
+# LazyClassifier
+clf = LazyClassifier(
+    verbose=0,
+    ignore_warnings=True,
+    custom_metric=None,
+    predictions=False,
+    random_state=3,
+    classifiers="all",
+)
+
+models, predictions = clf.fit(X_train, X_test, y_train, y_test)
+
+# Print model summaries
+print(models)
+
+# Create and train an Extra Trees classifier
+et_classifier = ExtraTreesClassifier(
+    n_estimators=100, max_depth=20, min_samples_split=2, min_samples_leaf=1, bootstrap=True
+)
+et_classifier.fit(X_train, y_train)
+
+# Evaluate the classifier
+y_pred = et_classifier.predict(X_test)
+
+scores = cross_val_score(et_classifier, X_train, y_train, cv=5)
+
+print("Cross-Validation Scores:", scores)
+print("Mean CV Score:", scores.mean())
+print("Standard Deviation of CV Scores:", scores.std())
+
+# Display confusion matrix
+confusion_matrix_display = confusion_matrix(y_test, y_pred)
+cm_display = sns.heatmap(
+    confusion_matrix_display,
+    annot=True,
+    cmap="Blues",
+    fmt="d",
+    xticklabels=["Negative", "Positive"],
+    yticklabels=["Negative", "Positive"],
+)
+cm_display.set_xlabel("Predicted")
+cm_display.set_ylabel("Actual")
+plt.show()
+
+# Calculate and print F1 score
+f1 = f1_score(y_test, y_pred)
+print(f"F1 Score: {f1:.4f}")
